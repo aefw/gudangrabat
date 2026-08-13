@@ -1,0 +1,34 @@
+*** /dev/null
+--- /dev/null
+***************
+*** 557,570
+- 			$Columns[] = "`created` = NOW()";
+- 			
+- 			// Check if exists
+- 			$Sql = "SELECT * FROM inv_barang_harga WHERE `id_inv_barang` = '" . escape_string($id_inv_barang) . "' AND `min_qty` = '" . escape_string($min_qty) . "' ";
+- 			$Query = $this -> db -> query($Sql);
+- 			if( $Query->num_rows() == 0 ) {
+- 				$Sql = "INSERT INTO inv_barang_harga SET " . implode(', ', $Columns);
+- 				$this -> db -> query($Sql);
+- 				echo "[inserted]\n";
+- 			} else {
+- 				$Sql = "UPDATE inv_barang_harga SET " . implode(', ', $Columns) . " WHERE `id_inv_barang` = '" . escape_string($id_inv_barang) . "' AND `min_qty` = '" . escape_string($min_qty) . "' ";
+- 				$Query = $this -> db -> query($Sql);
+- 				echo "[updated]\n";
+- 			}
+--- 557,571 -----
++ 
++ 			// Update columns (tanpa created dan primary keys)
++ 			$UpdateColumns = array();
++ 			$UpdateColumns[] = "`harga_jual_1` = '" . escape_string($harga_jual_1 * $min_qty) . "'";
++ 			$UpdateColumns[] = "`harga_jual_2` = '" . escape_string($harga_jual_2 * $min_qty) . "'";
++ 			$UpdateColumns[] = "`harga_jual_3` = '" . escape_string($harga_jual_3 * $min_qty) . "'";
++ 			$UpdateColumns[] = "`begin_dt` = '" . escape_string($Data['tanggal_awal'] ?? date('Y-m-d')) . " 00:00:00'";
++ 			$UpdateColumns[] = "`end_dt` = '" . escape_string($Data['tanggal_akhir'] ?? date('Y-m-d')) . " 23:59:59'";
++ 			$UpdateColumns[] = "`active` = " . ($active ? "TRUE" : "FALSE");
++ 			$UpdateColumns[] = "`satuan_grosir` = '" . escape_string((!empty($Data['satuan_paket']) && trim((string) $Data['satuan_paket'])!='') ? $Data['satuan_paket'] : 'Paket') . "'";
++ 
++ 			// INSERT ... ON DUPLICATE KEY UPDATE (lebih aman dari race condition)
++ 			$Sql = "INSERT INTO inv_barang_harga SET " . implode(', ', $Columns) . ", `created` = NOW()
++ 					ON DUPLICATE KEY UPDATE " . implode(', ', $UpdateColumns);
++ 			$this -> db -> query($Sql);

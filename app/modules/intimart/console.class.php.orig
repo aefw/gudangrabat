@@ -1,0 +1,1102 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+/**
+ * Running in console/crontab
+#sudo chmod -R 777 "/home/aldo/Dropbox/AEFW3/gudangrabat/gudangrabat/upload";
+
+php8.1 "$SELF_DIR/index.php" "intimart/console/AutoGetLatLngToko" -host=dev8.indonetsoft.com > /tmp/getTokoGps.log     2> /tmp/getTokoGps-error.log;
+
+https://console.cloud.google.com/
++ Maps JavaScript API
++ Geocoding API
+
+cat > $HOME/run-intimart-data.sh <<'EOF'
+#!/bin/bash
+DOMAIN="dev8.indonetsoft.com"
+SELF_DIR="/home/aldo/Dropbox/AEFW3/gudangrabat/gudangrabat"
+for cmd in "getAccAkun3" "getPegawai" "getGudang" "getKategori"; do
+	echo "php8.1 \"$SELF_DIR/index.php\" \"intimart/console/$cmd\" -host=$DOMAIN";
+	php8.1 "$SELF_DIR/index.php" "intimart/console/$cmd" -host=$DOMAIN > "/tmp/$cmd.log" 2> "/tmp/$cmd-error.log";
+done
+EOF
+chmod +x $HOME/run-intimart-data.sh
+
+cat > $HOME/run-intimart-barang.sh <<'EOF'
+#!/bin/bash
+DOMAIN="dev8.indonetsoft.com"
+SELF_DIR="/home/aldo/Dropbox/AEFW3/gudangrabat/gudangrabat"
+for cmd in "getBarang" "getStokDC" "getPaket" "getPromo" "getToko"; do
+	echo "php8.1 \"$SELF_DIR/index.php\" \"intimart/console/$cmd\" -host=$DOMAIN";
+	php8.1 "$SELF_DIR/index.php" "intimart/console/$cmd" -host=$DOMAIN > "/tmp/$cmd.log" 2> "/tmp/$cmd-error.log";
+done
+EOF
+chmod +x $HOME/run-intimart-barang.sh
+
+cat > $HOME/run-intimart.sh <<'EOF'
+#!/bin/bash
+DOMAIN="dev8.indonetsoft.com"
+SELF_DIR="/home/aldo/Dropbox/AEFW3/gudangrabat/gudangrabat"
+x=4
+while (( x >= 1 )); do
+	echo "x = $x"
+	for cmd in "pushToko" "diskonImplemented" "invoice_generate" "invoice_syn_necto"; do
+		echo "php8.1 \"$SELF_DIR/index.php\" \"intimart/console/$cmd\" -host=$DOMAIN";
+		php8.1 "$SELF_DIR/index.php" "intimart/console/$cmd" -host=$DOMAIN > "/tmp/$cmd.log" 2> "/tmp/$cmd-error.log";
+		if [ $cmd == "invoice_generate" ]; then
+			mv "/tmp/$cmd.log" "/tmp/$cmd.command";
+			echo "/tmp/$cmd.command";
+			chmod +x "/tmp/$cmd.command";
+			"/tmp/$cmd.command" > "/tmp/$cmd.log" 2> "/tmp/$cmd-error.log";
+		fi
+	done
+	sleep $(( (60 / x) - 3 )); # sleep for a while, adjust as needed
+	((x--))
+done
+EOF
+chmod +x $HOME/run-intimart.sh
+
+# CLIENTS RUNNING
+0 * * * * $HOME/run-intimart-data.sh > /tmp/run-intimart-data.log 2> /tmp/run-intimart-data-error.log
+* * * * * $HOME/run-intimart-barang.sh > /tmp/run-intimart-barang.log 2> /tmp/run-intimart-barang-error.log
+* * * * * $HOME/run-intimart.sh > /tmp/run-intimart.log 2> /tmp/run-intimart-error.log
+
+php8.1 "/home/aldo/Dropbox/AEFW3/gudangrabat/gudangrabat/index.php" "intimart/console/getPaket" -host="dev8.indonetsoft.com"
+php8.1 "/home/aldo/Dropbox/AEFW3/gudangrabat/gudangrabat/index.php" "intimart/console/getPromo" -host="dev8.indonetsoft.com"
+php8.1 "/home/aldo/Dropbox/AEFW3/gudangrabat/gudangrabat/index.php" "intimart/console/invoice_syn_necto" -host="dev8.indonetsoft.com"
+
+ */
+
+class console extends AEFW {
+
+	function __construct() {
+		parent::__construct();
+		if( ! IS_CONSOLE ) show_error('Access Denied', 'You are not have permission !', 403);
+
+        if( preg_match('/(indonetsoft)/i', index_page()) ) {
+			if( preg_match('/(dev([\d\.]+)?(-)?([\w]+)?\.|(demo|sandbox)\.)/i', index_page()) ) {
+				$database['dbpgMRO']['driver'] = 'pgsql';
+				$database['dbpgMRO']['hostname'] = '103.175.218.73'; // 'localhost';
+				$database['dbpgMRO']['username'] = 'postgres';
+				$database['dbpgMRO']['password'] = 'masterkey';
+				$database['dbpgMRO']['name'] = 'db_intimart_mro_system';
+				$database['dbpgMRO']['prefix'] = '';
+			} else {
+			}
+		}
+		$key = 'dbpgMRO';
+		$this -> database -> setVar($key);
+		$this -> database -> create($database[$key]);
+
+        if( preg_match('/(indonetsoft)/i', index_page()) ) {
+			if( preg_match('/(dev([\d\.]+)?(-)?([\w]+)?\.|(demo|sandbox)\.)/i', index_page()) ) {
+				$database['dbpgDC']['driver'] = 'pgsql';
+				$database['dbpgDC']['hostname'] = '103.175.218.73'; // 'localhost';
+				$database['dbpgDC']['username'] = 'postgres';
+				$database['dbpgDC']['password'] = 'masterkey';
+				$database['dbpgDC']['name'] = 'db_intimart_dc';
+				$database['dbpgDC']['prefix'] = '';
+			} else {
+				/*
+				$database['dbpgDC']['driver'] = 'pgsql';
+				$database['dbpgDC']['hostname'] = '10.0.0.253:8401';
+				$database['dbpgDC']['username'] = 'postgres';
+				$database['dbpgDC']['password'] = 'masterkey';
+				$database['dbpgDC']['name'] = 'point_dc_intimart';
+				$database['dbpgDC']['prefix'] = '';
+				/** */
+			}
+		}
+		$key = 'dbpgDC';
+		$this -> database -> setVar($key);
+		$this -> database -> create($database[$key]);
+	}
+
+	function index() {
+	}
+
+	function getAccAkun3() {
+		// BEGIN Acc Akun3
+		$Sql = "SELECT * from acc_akun3 where kode_akun2='11' order by kode_akun3 ";
+		$Query = $this -> dbpgMRO -> query($Sql);
+		$Datas = $Query->result_array();
+		foreach($Datas as $Data) {
+			echo "\n{$Data['kode_akun3']} ";
+			$Columns = array();
+			$Columns[] = "`kode_acc_3` = " . ((trim($Data['kode_akun3'])!='') ? "'" . escape_string($Data['kode_akun3']) . "'" : "NULL");
+			$Columns[] = "`nama_acc_3` = " . ((trim($Data['nama_akun3'])!='') ? "'" . escape_string($Data['nama_akun3']) . "'" : "NULL");
+			$Columns[] = "`id_keu_acc_2` = '11' ";
+			$Columns[] = "`rumus` = " . ((trim($Data['rumus'])!='') ? (($Data['rumus']=='D-K') ? "'DC'" : "'CD'") : "NULL");
+			$Columns[] = "`positive` = " . ((trim($Data['posisi'])!='') ? (($Data['posisi']=='Plus') ? "TRUE" : "FALSE") : "NULL");
+			$Sql = "SELECT * from keu_acc_3 where kode_acc_3 = '" . escape_string($Data['kode_akun3']) . "' ";
+			$Query = $this -> db -> query($Sql);
+			if( $Query->num_rows() == 0 ) {
+				$id = $this -> db -> next_autoincrement('{prefix}keu_acc_3');
+				//$Columns[] = "id_keu_acc_2 = '11'";
+				$Columns[] = "`id_keu_acc_3` = '" . escape_string($id) . "'";
+				$Sql = "INSERT INTO keu_acc_3 set " . implode(', ', $Columns);
+				$Query = $this -> db -> query($Sql);
+			} else {
+				$_Data = $Query->fetch_array();
+				$id = $_Data['id_keu_acc_3'];
+				$Sql = "UPDATE keu_acc_3 set " . implode(', ', $Columns) . " where id_keu_acc_3 = '" . escape_string($id) . "' ";
+				$Query = $this -> db -> query($Sql);
+			}
+			echo "[ok]\n";
+		}
+		// END Acc Akun3
+	}
+
+	function getPegawai() {
+		// BEGIN PEGAWAI
+		$Sql = "SELECT * from mst_karyawan order by kode_karyawan ";
+		$Query = $this -> dbpgMRO -> query($Sql);
+		$Datas = $Query->result_array();
+		foreach($Datas as $Data) {
+			echo "\n{$Data['kode_karyawan']} ";
+			$Columns = array();
+			$Columns[] = "`kode_pegawai` = " . ((trim($Data['kode_karyawan'])!='') ? "'" . escape_string($Data['kode_karyawan']) . "'" : "NULL");
+			$Columns[] = "`nip` = " . ((trim($Data['barcode'])!='') ? "'" . escape_string($Data['barcode']) . "'" : "NULL");
+			$Columns[] = "`pegawai_nama` = " . ((trim($Data['nama_karyawan'])!='') ? "'" . escape_string($Data['nama_karyawan']) . "'" : "NULL");
+			$Sql = "SELECT * from peg_pegawai where kode_pegawai = '" . escape_string($Data['kode_karyawan']) . "' ";
+			$Query = $this -> db -> query($Sql);
+			if( $Query->num_rows() == 0 ) {
+				$id = $this -> db -> next_autoincrement('{prefix}peg_pegawai');
+				$Columns[] = "`created` = now()";
+				$Columns[] = "`id_peg_pegawai` = '" . escape_string($id) . "'";
+				$Sql = "INSERT INTO peg_pegawai set " . implode(', ', $Columns);
+				$Query = $this -> db -> query($Sql);
+			} else {
+				$_Data = $Query->fetch_array();
+				$id = $_Data['id_peg_pegawai'];
+				$Sql = "UPDATE peg_pegawai set " . implode(', ', $Columns) . " where id_peg_pegawai = '" . escape_string($id) . "' ";
+				$Query = $this -> db -> query($Sql);
+			}
+			echo "[ok]\n";
+		}
+		// END PEGAWAI
+	}
+
+	function getGudang() {
+		// BEGIN GUDANG
+		$Sql = "SELECT * from mst_gudang order by kode_gudang ";
+		$Query = $this -> dbpgMRO -> query($Sql);
+		$Datas = $Query->result_array();
+		foreach($Datas as $Data) {
+			echo "\n{$Data['kode_gudang']} ";
+			$Columns = array();
+			foreach($Data as $key => $value) {
+				if( trim((string) $value) == '' ) $value = null;
+				$value = trim((string) $value);
+				$Columns[] = "`" . $key . "` = " . ((trim((string) $value)!='') ? "'" . escape_string($value) . "'" : "NULL");
+			}
+			$Sql = "SELECT * from mst_gudang where kode_gudang = '" . escape_string($Data['kode_gudang']) . "' ";
+			$Query = $this -> db -> query($Sql);
+			if( $Query->num_rows() == 0 ) {
+				$id = $this -> db -> next_autoincrement('{prefix}mst_gudang');
+				$Columns[] = "`id_mst_gudang` = '" . escape_string($id) . "'";
+				$Sql = "INSERT INTO mst_gudang set " . implode(', ', $Columns);
+				$Query = $this -> db -> query($Sql);
+			} else {
+				$_Data = $Query->fetch_array();
+				$id = $_Data['id_mst_gudang'];
+				$Sql = "UPDATE mst_gudang set " . implode(', ', $Columns) . " where id_mst_gudang = '" . escape_string($id) . "' ";
+				$Query = $this -> db -> query($Sql);
+			}
+			echo "[ok]\n";
+		}
+		// END GUDANG
+	}
+
+	function getKategori() {
+		// BEGIN KATEGORI
+		$Sql = "SELECT * from inv_kategori order by kode_kategori ";
+		$Query = $this -> dbpgMRO -> query($Sql);
+		$Datas = $Query->result_array();
+		foreach($Datas as $Data) {
+			echo "\n{$Data['kode_kategori']} ";
+			$Columns = array();
+			foreach($Data as $key => $value) {
+				if( trim((string) $value) == '' ) $value = null;
+				$value = trim((string) $value);
+				$Columns[] = "`" . $key . "` = " . ((trim((string) $value)!='') ? "'" . escape_string($value) . "'" : "NULL");
+			}
+			if( ! isset($Data['nama_kategori']) ) {
+				$value = preg_replace('/('.($Data['kode_kategori']).')[\s+]/', '', $Data['keterangan']);
+				$Columns[] = "`nama_kategori` = " . ((trim((string) $value)!='') ? "'" . escape_string($value) . "'" : "NULL");
+			}
+			$Sql = "SELECT * from inv_kategori where kode_kategori = '" . escape_string($Data['kode_kategori']) . "' ";
+			$Query = $this -> db -> query($Sql);
+			if( $Query->num_rows() == 0 ) {
+				$id = $this -> db -> next_autoincrement('{prefix}inv_kategori');
+				$Columns[] = "`id_inv_kategori` = '" . escape_string($id) . "'";
+				$Sql = "INSERT INTO inv_kategori set " . implode(', ', $Columns);
+				$Query = $this -> db -> query($Sql);
+			} else {
+				$_Data = $Query->fetch_array();
+				$id = $_Data['id_inv_kategori'];
+				$Sql = "UPDATE inv_kategori set " . implode(', ', $Columns) . " where id_inv_kategori = '" . escape_string($id) . "' ";
+				$Query = $this -> db -> query($Sql);
+			}
+			echo "[ok]\n";
+		}
+		// END KATEGORI
+	}
+
+	function getBarang() {
+		// BEGIN BARANG
+		$Sql = "SELECT * from inv_barang order by kode_barang ";
+		$Query = $this -> dbpgMRO -> query($Sql);
+		$Datas = $Query->result_array();
+		foreach($Datas as $Data) {
+			echo "\n{$Data['kode_barang']} ";
+			$Columns = array();
+			foreach($Data as $key => $value) {
+				if( trim((string) $value) == '' ) $value = null;
+				if( preg_match('/^(harga_jual)$/i', $key) ) {
+					unset($Data[$key]);
+					$key = 'harga_jual_1';
+					$value = $value ?? 0;
+					$Data[$key] = $value;
+				}
+				if( preg_match('/^(harga_jual_toko)$/i', $key) ) {
+					unset($Data[$key]);
+					$key = 'harga_jual_2';
+					$value = $value ?? $Data['harga_jual_1'] ?? $Data['harga_jual'] ?? 0;
+					$Data[$key] = $value;
+				}
+				if( preg_match('/^(satuan)$/i', $key) ) {
+					$value = $value ?? 'pcs';
+					$Data[$key] = $value;
+				}
+				if( preg_match('/^(nama_barang)$/i', $key) ) {
+					if( trim((string) $value) == '' ) {
+						echo "[skipped] nama_barang is empty\n";
+						continue 2; // skip data if nama_barang is empty // continue 2, merupakan continue untuk nested diatasnya, kalau hanya continue maka hanya untuk loop saat ini
+					}
+				}
+				if( preg_match('/^(aktif_mro)$/i', $key) ) {
+					$key = 'visible';
+					$value = ( trim((string) $Data['aktif_mro'])=='Ya' ) ? 1 : 0;
+					$Data[$key] = $value;
+				}
+				if( preg_match('/^(max_penjualan_member)$/i', $key) ) continue; // skip colomn
+				$value = trim((string) $value);
+				if( $key == 'min_order_cust' ) { $value = (int) $value; $value = ($value > 0) ? $value : 1; }
+				if( preg_match('/^(harga_jual_[\d])$/i', $key) ) $value = ceil($value); // HARGA JUAL PEMBULATAN NAIK
+				$Columns[] = "`" . $key . "` = " . ((trim((string) $value)!='') ? "'" . escape_string($value) . "'" : "NULL");
+			}
+			if( ! isset($Data['tanggal_input']) ) {
+				$Columns[] = "`tanggal_input` = now()";
+				$Columns[] = "`jam_input` = now()";
+			}
+			if( ! isset($Data['harga_jual_2']) ) {
+				$Data['harga_jual_2'] = $Data['harga_jual_1'] ?? 0;
+				$value = $Data['harga_jual_2'];
+				$Columns[] = "`harga_jual_2` = " . ((trim((string) $value)!='') ? "'" . escape_string($value) . "'" : "NULL");
+			}
+			if( ! isset($Data['harga_jual_3']) ) {
+				$Data['harga_jual_3'] = $Data['harga_jual_2'] ?? 0;
+				$value = $Data['harga_jual_3'];
+				$Columns[] = "`harga_jual_3` = " . ((trim((string) $value)!='') ? "'" . escape_string($value) . "'" : "NULL");
+			}
+			$Sql = "SELECT * from inv_barang where kode_barang = '" . escape_string($Data['kode_barang']) . "' ";
+			$Query = $this -> db -> query($Sql);
+			if( $Query->num_rows() == 0 ) {
+				$id = $this -> db -> next_autoincrement('{prefix}inv_barang');
+				$Columns[] = "`id_inv_barang` = '" . escape_string($id) . "'";
+				$Columns[] = "`created` = now()";
+				$Sql = "INSERT INTO inv_barang set " . implode(', ', $Columns);
+				$Query = $this -> db -> query($Sql);
+			} else {
+				$_Data = $Query->fetch_array();
+				$id = $_Data['id_inv_barang'];
+				$Sql = "UPDATE inv_barang set " . implode(', ', $Columns) . " where id_inv_barang = '" . escape_string($id) . "' ";
+				$Query = $this -> db -> query($Sql);
+			}
+
+			$satuan_grosir = $Data['satuan'];
+			$harga_jual_1 = ceil($Data['harga_jual_1']); // HARGA JUAL PEMBULATAN NAIK
+			$harga_jual_2 = ceil($Data['harga_jual_2']); // HARGA JUAL PEMBULATAN NAIK
+			$harga_jual_3 = ceil($Data['harga_jual_3']); // HARGA JUAL PEMBULATAN NAIK
+			$id_inv_barang = $id;
+			$Columns = array();
+			$Sql = "SELECT * from inv_barang_harga where id_inv_barang='" . escape_string($id_inv_barang) . "' and min_qty='1' ";
+			$Query = $this -> db -> query($Sql);
+			if( $Query->num_rows() == 0 ) {
+				$id = $this -> db -> next_autoincrement('{prefix}inv_barang_harga');
+				$Columns[] = "`id_inv_barang_harga` = '" . escape_string($id) . "'";
+				$Columns[] = "`id_inv_barang` = '" . escape_string($id_inv_barang) . "'";
+				$Columns[] = "`min_qty` = '1'";
+				$Columns[] = "`satuan_grosir` = '" . escape_string($satuan_grosir) . "'";
+				$Columns[] = "`harga_jual_1` = '" . escape_string($harga_jual_1) . "'";
+				$Columns[] = "`harga_jual_2` = '" . escape_string($harga_jual_2) . "'";
+				$Columns[] = "`harga_jual_3` = '" . escape_string($harga_jual_3) . "'";
+				$Columns[] = "`created` = now()";
+				$Sql = "INSERT INTO inv_barang_harga set " . implode(', ', $Columns);
+				$Query = $this -> db -> query($Sql);
+			} else {
+				$_Data = $Query->fetch_array();
+				$id = $_Data['id_inv_barang'];
+				//$Columns[] = "`id_inv_barang` = '" . escape_string($id_inv_barang) . "'";
+				//$Columns[] = "`min_qty` = '1'";
+				$Columns[] = "`satuan_grosir` = '" . escape_string($satuan_grosir) . "'";
+				$Columns[] = "`harga_jual_1` = '" . escape_string($harga_jual_1) . "'";
+				$Columns[] = "`harga_jual_2` = '" . escape_string($harga_jual_2) . "'";
+				$Columns[] = "`harga_jual_3` = '" . escape_string($harga_jual_3) . "'";
+				$Sql = "UPDATE inv_barang_harga set " . implode(', ', $Columns) . " where id_inv_barang_harga = '" . escape_string($id) . "' and min_qty='1' ";
+				$Query = $this -> db -> query($Sql);
+			}
+			echo "[ok]\n";
+		}
+		$Sql = "UPDATE inv_barang set min_order_cust = 1 where min_order_cust <= 0 or min_order_cust is null ";
+		$Query = $this -> db -> query($Sql);
+		// END BARANG
+	}
+	function getStokDC() {
+		// BEGIN STOK DC
+		$Sql = "SELECT id_inv_barang,barcode from inv_barang where `visible`=true order by id_inv_barang ";
+		$Query = $this -> db -> query($Sql);
+		$Datas = $Query->result_array();
+		foreach($Datas as $Data) {
+			$Sql = "SELECT stok_gudang_1 from inv_barang where barcode = '" . escape_string($Data['barcode']) . "' ";
+			$Query = $this -> dbpgDC -> query($Sql);
+			$stok_gudang_1 = $Query->fetch_array();
+
+			if( ! $stok_gudang_1 ) continue;
+
+			$stok_gudang_1 = $stok_gudang_1['stok_gudang_1'];
+			if( $stok_gudang_1 == '' ) {
+				$stok_gudang_1 = 0;
+			}
+			if( $stok_gudang_1 < 0 ) {
+				$stok_gudang_1 = 0;
+			}
+			echo "\n{$Data['barcode']} => {$stok_gudang_1} \n";
+
+			$Sql = "UPDATE inv_barang set stok_gudang_1 = '" . escape_string($stok_gudang_1) . "' where id_inv_barang = '" . escape_string($Data['id_inv_barang']) . "' ";
+			$Query = $this -> db -> query($Sql);
+		}
+		// END STOK DC
+	}
+	function getPaket() {
+		// BEGIN PAKET - Sync inv_paket from PostgreSQL to inv_barang_harga
+		$Sql = "WITH ranked AS (
+    SELECT
+        kode_paket,
+        kode_barang,
+        qty_minimum,
+        harga,
+        khusus_member,
+        satuan_paket,
+        tanggal_awal,
+        tanggal_akhir,
+        ROW_NUMBER() OVER (
+            PARTITION BY kode_barang, qty_minimum, khusus_member
+            ORDER BY tanggal_akhir ASC
+        ) AS rn
+    FROM inv_paket
+    WHERE jenis = 'Ubah Harga'
+      AND CURRENT_DATE BETWEEN tanggal_awal AND tanggal_akhir
+),
+
+-- ambil harga terpilih (per member / non-member)
+selected AS (
+    SELECT *
+    FROM ranked
+    WHERE rn = 1
+),
+
+-- ambil tanggal paling cepat berakhir (global)
+tanggal_terdekat AS (
+    SELECT
+        kode_barang,
+        qty_minimum,
+        MIN(tanggal_awal) AS tanggal_awal,
+        MIN(tanggal_akhir) AS tanggal_akhir
+    FROM inv_paket
+    WHERE jenis = 'Ubah Harga'
+      AND CURRENT_DATE BETWEEN tanggal_awal AND tanggal_akhir
+    GROUP BY kode_barang, qty_minimum
+),
+
+-- gabung kode paket
+paket_agg AS (
+    SELECT
+        kode_barang,
+        qty_minimum,
+        STRING_AGG(kode_paket, ',') AS kolom_pakets
+    FROM inv_paket
+    WHERE jenis = 'Ubah Harga'
+      AND CURRENT_DATE BETWEEN tanggal_awal AND tanggal_akhir
+    GROUP BY kode_barang, qty_minimum
+)
+
+SELECT
+    s.kode_barang,
+    s.qty_minimum,
+
+    -- harga
+    MAX(CASE
+        WHEN s.khusus_member = 'Tidak' THEN s.harga
+    END) AS harga_jual_1,
+
+    MAX(CASE
+        WHEN s.khusus_member = 'Ya' THEN s.harga
+    END) AS harga_jual_2,
+
+    -- satuan paket (ambil salah satu karena untuk qty sama, satuan_paket pasti sama)
+    -- jika NULL, default ke 'Paket'
+    COALESCE(MAX(s.satuan_paket), 'Paket') AS satuan_paket,
+
+    -- tanggal global (paling cepat berakhir)
+    t.tanggal_awal,
+    t.tanggal_akhir,
+
+    p.kolom_pakets
+
+FROM selected s
+JOIN tanggal_terdekat t USING (kode_barang, qty_minimum)
+JOIN paket_agg p USING (kode_barang, qty_minimum)
+
+GROUP BY
+    s.kode_barang,
+    s.qty_minimum,
+    t.tanggal_awal,
+    t.tanggal_akhir,
+    p.kolom_pakets
+
+ORDER BY
+    s.kode_barang,
+    s.qty_minimum
+";
+		$Query = $this -> dbpgMRO -> query($Sql);
+		$Datas = $Query->result_array();
+		foreach($Datas as $Data) {
+			echo "\nkode_barang: {$Data['kode_barang']} ";
+
+			$min_qty = (float)($Data['qty_minimum'] ?? 1);
+			if( $min_qty <= 1 ) continue;
+
+			// Get id_inv_barang from MariaDB
+			//$Sql = "SELECT id_inv_barang FROM inv_barang WHERE kode_barang = '" . escape_string($Data['kode_barang']) . "' ";
+			$Sql = "SELECT b.kode_barang, b.id_inv_barang, b.harga_jual_1, b.harga_jual_2, b.harga_jual_3, b.satuan
+				FROM inv_barang b 
+				LEFT OUTER JOIN inv_barang_harga h USING(id_inv_barang)
+				WHERE b.kode_barang = '" . escape_string($Data['kode_barang']) . "'
+				AND h.min_qty = 1
+				";
+			$Query = $this -> db -> query($Sql);
+			if( $Query->num_rows() == 0 ) {
+				echo "[skipped - no base barang]\n";
+				continue;
+			}
+			$Barang = $Query->fetch_array();
+			$id_inv_barang = $Barang['id_inv_barang'];
+
+			$Sql = "UPDATE inv_barang_harga set `active` = FALSE where `id_inv_barang` = '" . escape_string($id_inv_barang) . "' and `min_qty` >= 2 ";
+			$Query = $this -> db -> query($Sql); // Disabled karena mengakibatkan min_qty yang masih aktif tetapi beda min_aty yg ada
+		}
+		print_r("ok\nok\nok");
+		foreach($Datas as $Data) {
+			if( $Data['qty_minimum'] >= 2 ) print_r($Data);
+			echo "\nkode_barang: {$Data['kode_barang']} ";
+
+			$min_qty = (float)($Data['qty_minimum'] ?? 1);
+			if( $min_qty <= 1 ) continue;
+
+			// Get id_inv_barang from MariaDB
+			//$Sql = "SELECT id_inv_barang FROM inv_barang WHERE kode_barang = '" . escape_string($Data['kode_barang']) . "' ";
+			$Sql = "SELECT b.kode_barang, b.id_inv_barang, b.harga_jual_1, b.harga_jual_2, b.harga_jual_3, b.satuan
+				FROM inv_barang b 
+				LEFT OUTER JOIN inv_barang_harga h USING(id_inv_barang)
+				WHERE b.kode_barang = '" . escape_string($Data['kode_barang']) . "'
+				AND h.min_qty = 1
+				";
+			$Query = $this -> db -> query($Sql);
+			if( $Query->num_rows() == 0 ) {
+				echo "[skipped - no base barang]\n";
+				continue;
+			}
+			$Barang = $Query->fetch_array();
+			$id_inv_barang = $Barang['id_inv_barang'];
+
+			//$Sql = "UPDATE inv_barang_harga set `active` = FALSE where `id_inv_barang` = '" . escape_string($id_inv_barang) . "' and `min_qty` >= 2 ";
+			//$Query = $this -> db -> query($Sql); // Disabled karena mengakibatkan min_qty yang masih aktif tetapi beda min_aty yg ada
+
+			if( trim((string) $Data['harga_jual_1']) == '' ) {
+				$Data['harga_jual_1'] = $Barang['harga_jual_1'];
+			}
+			if( trim((string) $Data['harga_jual_2']) == '' ) {
+				$Data['harga_jual_2'] = $Barang['harga_jual_2'];
+			}
+				$Data['harga_jual_3'] = $Barang['harga_jual_3'];
+
+			$Columns = array();
+			//$id_inv_barang_harga = trim($Data['kode_paket']);
+			$min_qty = (float)($Data['qty_minimum'] ?? 1);
+			$harga_jual_1 = ceil((float)($Data['harga_jual_1'] ?? '')); // ceil like getBarang
+			$harga_jual_2 = ceil((float)($Data['harga_jual_2'] ?? $harga_jual_1)); // ceil like getBarang
+			$harga_jual_3 = ceil((float)($Data['harga_jual_2'] ?? $harga_jual_1)); // ceil like getBarang, default sama dengan harga_jual_2
+
+			$active = true; // default active true, karena data paket yang diambil sudah difilter berdasarkan tanggal aktifnya di SQL
+			if( $harga_jual_1 <= 0 && $harga_jual_2 <= 0 && $harga_jual_3 <= 0 ) {
+				$active = false; // jika semua harga jual <= 0, maka set active false, karena tidak masuk akal jika harga jual <= 0, kemungkinan data paket hanya untuk diskon tanpa harga jual, atau harga jual belum diisi, sehingga tidak perlu diaktifkan
+			}
+
+			//$Columns[] = "`id_inv_barang_harga` = '" . escape_string($id_inv_barang_harga) . "'";
+			$Columns[] = "`id_inv_barang` = '" . escape_string($id_inv_barang) . "'";
+			$Columns[] = "`min_qty` = '" . escape_string($min_qty) . "'";
+			$Columns[] = "`harga_jual_1` = '" . escape_string($harga_jual_1 * $min_qty) . "'";
+			$Columns[] = "`harga_jual_2` = '" . escape_string($harga_jual_2 * $min_qty) . "'"; // same as 1 unless specified
+			$Columns[] = "`harga_jual_3` = '" . escape_string($harga_jual_3 * $min_qty) . "'"; // same as 1 unless specified
+			$Columns[] = "`begin_dt` = '" . escape_string($Data['tanggal_awal'] ?? date('Y-m-d')) . " 00:00:00'";
+			$Columns[] = "`end_dt` = '" . escape_string($Data['tanggal_akhir'] ?? date('Y-m-d')) . " 23:59:59'";
+			$Columns[] = "`active` = " . ($active ? "TRUE" : "FALSE");
+			$Columns[] = "`satuan_grosir` = '" . escape_string((!empty($Data['satuan_paket']) && trim((string) $Data['satuan_paket'])!='') ? $Data['satuan_paket'] : 'Paket') . "' -- 'Paket'";
+			$Columns[] = "`created` = NOW()";
+			
+			// Check if exists
+			$Sql = "SELECT * FROM inv_barang_harga WHERE `id_inv_barang` = '" . escape_string($id_inv_barang) . "' AND `min_qty` = '" . escape_string($min_qty) . "' ";
+			$Query = $this -> db -> query($Sql);
+			if( $Query->num_rows() == 0 ) {
+				$Sql = "INSERT INTO inv_barang_harga SET " . implode(', ', $Columns);
+				$this -> db -> query($Sql);
+				echo "[inserted]\n";
+			} else {
+				$Sql = "UPDATE inv_barang_harga SET " . implode(', ', $Columns) . " WHERE `id_inv_barang` = '" . escape_string($id_inv_barang) . "' AND `min_qty` = '" . escape_string($min_qty) . "' ";
+				$this -> db -> query($Sql);
+				echo "[updated]\n";
+			}
+		}
+		// END PAKET
+	}
+	function getPromo() {
+		// BEGIN PROMO
+		$Sql = "SELECT * from mst_promo order by kode_promo ";
+		$Query = $this -> dbpgMRO -> query($Sql);
+		$Datas = $Query->result_array();
+		foreach($Datas as $Data) {
+			echo "\n[PROMO] {$Data['kode_promo']} ";
+			$Data['kelipatan'] = strtolower(trim((string)$Data['kelipatan']));
+			$Data['khusus_member'] = strtolower(trim((string)$Data['khusus_member']));
+			$Columns = array();
+			$Columns[] = "`kode_promo` = '" . escape_string($Data['kode_promo']) . "'";
+			$Columns[] = "`tanggal_awal` = " . (trim((string)$Data['tanggal_awal'])!='' ? "'" . escape_string($Data['tanggal_awal']) . "'" : "NULL");
+			$Columns[] = "`tanggal_akhir` = " . (trim((string)$Data['tanggal_akhir'])!='' ? "'" . escape_string($Data['tanggal_akhir']) . "'" : "NULL");
+			$Columns[] = "`keterangan` = " . (trim((string)$Data['keterangan'])!='' ? "'" . escape_string($Data['keterangan']) . "'" : "''");
+			$Columns[] = "`minimum_belanja` = " . (trim((string)$Data['minimum_belanja'])!='' ? "'" . escape_string($Data['minimum_belanja']) . "'" : "NULL");
+			$Columns[] = "`jenis_pelanggan` = " . (trim((string)$Data['jenis_pelanggan'])!='' ? "'" . escape_string($Data['jenis_pelanggan']) . "'" : "NULL");
+			$Columns[] = "`jenis_barang` = " . (trim((string)$Data['jenis_barang'])!='' ? "'" . escape_string($Data['jenis_barang']) . "'" : "NULL");
+			$Columns[] = "`diskon_total` = " . (trim((string)$Data['diskon_total'])!='' ? "'" . escape_string($Data['diskon_total']) . "'" : "NULL");
+			$Columns[] = "`kelipatan` = " . ((preg_match('/^(ya|true|1)$/i', $Data['kelipatan'])) ? "TRUE" : "FALSE");
+			$Columns[] = "`jenis_hadiah` = " . (trim((string)$Data['jenis_hadiah'])!='' ? "'" . escape_string($Data['jenis_hadiah']) . "'" : "NULL");
+			$Columns[] = "`diskon` = " . (trim((string)$Data['diskon'])!='' ? "'" . escape_string($Data['diskon']) . "'" : "NULL");
+			$Columns[] = "`khusus_member` = " . ((preg_match('/^(ya|true|1)$/i', $Data['khusus_member'])) ? "TRUE" : "FALSE");
+			$Columns[] = "`max_penjualan` = " . (trim((string)$Data['max_penjualan'])!='' ? "'" . escape_string($Data['max_penjualan']) . "'" : "NULL");
+
+			$Sql2 = "SELECT * from inv_promo where kode_promo = '" . escape_string($Data['kode_promo']) . "' ";
+			$Query2 = $this -> db -> query($Sql2);
+			if( $Query2->num_rows() == 0 ) {
+				$id = $this -> db -> next_autoincrement('{prefix}inv_promo');
+				$Columns[] = "`id_inv_promo` = '" . escape_string($id) . "'";
+				$Columns[] = "`created` = NOW()";
+				$Sql2 = "INSERT INTO inv_promo SET " . implode(', ', $Columns);
+				$this -> db -> query($Sql2);
+				echo "[inserted]";
+			} else {
+				$_Data = $Query2->fetch_array();
+				$id = $_Data['id_inv_promo'];
+				$Sql2 = "UPDATE inv_promo SET " . implode(', ', $Columns) . " WHERE id_inv_promo = '" . escape_string($id) . "' ";
+				$this -> db -> query($Sql2);
+				echo "[updated]";
+			}
+
+			// mst_promo_barang → inv_promo_barang
+			$Sql = "SELECT * from mst_promo_barang where kode_promo = '" . escape_string($Data['kode_promo']) . "' order by kode_promo_barang ";
+			$Query = $this -> dbpgMRO -> query($Sql);
+			$Datas = $Query->result_array();
+			foreach($Datas as $DataB) {
+				echo "\n  [BARANG] {$DataB['kode_promo_barang']} ";
+				$DataB['kelipatan'] = strtolower(trim((string)$DataB['kelipatan']));
+				$Columns = array();
+				$Columns[] = "`kode_promo_barang` = '" . escape_string($DataB['kode_promo_barang']) . "'";
+				$Columns[] = "`kode_promo` = '" . escape_string($DataB['kode_promo']) . "'";
+				$Columns[] = "`kode_barang` = " . (trim((string)$DataB['kode_barang'])!='' ? "'" . escape_string($DataB['kode_barang']) . "'" : "NULL");
+				$Columns[] = "`qty` = " . (trim((string)$DataB['qty'])!='' ? "'" . escape_string($DataB['qty']) . "'" : "NULL");
+				$Columns[] = "`satuan` = " . (trim((string)$DataB['satuan'])!='' ? "'" . escape_string($DataB['satuan']) . "'" : "NULL");
+				$Columns[] = "`operasi` = " . (trim((string)$DataB['operasi'])!='' ? "'" . escape_string($DataB['operasi']) . "'" : "NULL");
+				$Columns[] = "`kelipatan` = " . ((preg_match('/^(ya|true|1)$/i', $DataB['kelipatan'])) ? "TRUE" : "FALSE");
+
+				$SqlB2 = "SELECT * from inv_promo_barang where kode_promo_barang = '" . escape_string($DataB['kode_promo_barang']) . "' ";
+				$QueryB2 = $this -> db -> query($SqlB2);
+				if( $QueryB2->num_rows() == 0 ) {
+					$idB = $this -> db -> next_autoincrement('{prefix}inv_promo_barang');
+					$Columns[] = "`id_inv_promo_barang` = '" . escape_string($idB) . "'";
+					$Columns[] = "`created` = NOW()";
+					$SqlB2 = "INSERT INTO inv_promo_barang SET " . implode(', ', $Columns);
+					$this -> db -> query($SqlB2);
+					echo "[inserted]";
+				} else {
+					$_DataB = $QueryB2->fetch_array();
+					$idB = $_DataB['id_inv_promo_barang'];
+					$SqlB2 = "UPDATE inv_promo_barang SET " . implode(', ', $Columns) . " WHERE id_inv_promo_barang = '" . escape_string($idB) . "' ";
+					$this -> db -> query($SqlB2);
+					echo "[updated]";
+				}
+			}
+
+			// mst_promo_hadiah → inv_promo_hadiah
+			$Sql = "SELECT * from mst_promo_hadiah where kode_promo = '" . escape_string($Data['kode_promo']) . "' order by kode_promo_hadiah ";
+			$Query = $this -> dbpgMRO -> query($Sql);
+			$Datas = $Query->result_array();
+			foreach($Datas as $DataH) {
+				echo "\n  [HADIAH] {$DataH['kode_promo_hadiah']} ";
+				$Columns = array();
+				$Columns[] = "`kode_promo_hadiah` = '" . escape_string($DataH['kode_promo_hadiah']) . "'";
+				$Columns[] = "`kode_promo` = '" . escape_string($DataH['kode_promo']) . "'";
+				$Columns[] = "`kode_barang` = " . (trim((string)$DataH['kode_barang'])!='' ? "'" . escape_string($DataH['kode_barang']) . "'" : "NULL");
+				$Columns[] = "`harga_khusus` = " . (trim((string)$DataH['harga_khusus'])!='' ? "'" . escape_string($DataH['harga_khusus']) . "'" : "NULL");
+				$Columns[] = "`jumlah` = " . (trim((string)$DataH['jumlah'])!='' ? "'" . escape_string($DataH['jumlah']) . "'" : "NULL");
+				$Columns[] = "`jenis` = " . (trim((string)$DataH['jenis'])!='' ? "'" . escape_string($DataH['jenis']) . "'" : "NULL");
+				$Columns[] = "`satuan` = " . (trim((string)$DataH['satuan'])!='' ? "'" . escape_string($DataH['satuan']) . "'" : "NULL");
+				$Columns[] = "`mode` = " . (trim((string)$DataH['mode'])!='' ? "'" . escape_string($DataH['mode']) . "'" : "NULL");
+
+				$SqlH2 = "SELECT * from inv_promo_hadiah where kode_promo_hadiah = '" . escape_string($DataH['kode_promo_hadiah']) . "' ";
+				$QueryH2 = $this -> db -> query($SqlH2);
+				if( $QueryH2->num_rows() == 0 ) {
+					$idH = $this -> db -> next_autoincrement('{prefix}inv_promo_hadiah');
+					$Columns[] = "`id_inv_promo_hadiah` = '" . escape_string($idH) . "'";
+					$Columns[] = "`created` = NOW()";
+					$SqlH2 = "INSERT INTO inv_promo_hadiah SET " . implode(', ', $Columns);
+					$this -> db -> query($SqlH2);
+					echo "[inserted]";
+				} else {
+					$_DataH = $QueryH2->fetch_array();
+					$idH = $_DataH['id_inv_promo_hadiah'];
+					$SqlH2 = "UPDATE inv_promo_hadiah SET " . implode(', ', $Columns) . " WHERE id_inv_promo_hadiah = '" . escape_string($idH) . "' ";
+					$this -> db -> query($SqlH2);
+					echo "[updated]";
+				}
+			}
+			echo "\n";
+		}
+		// END PROMO
+	}
+
+	function getToko() {
+		// BEGIN TOKO
+		$Sql = "SELECT * from mst_pelanggan order by kode_pelanggan ";
+		$Query = $this -> dbpgMRO -> query($Sql);
+		$Datas = $Query->result_array();
+		foreach($Datas as $Data) {
+			echo "\n{$Data['kode_pelanggan']} ";
+			$Columns = array();
+			foreach($Data as $key => $value) {
+				if( trim((string) $value) == '' ) $value = null;
+				if( preg_match('/(_pelanggan)$/i', $key) ) {
+					unset($Data[$key]);
+					$key = str_replace('_pelanggan', '_toko', $key);
+					$Data[$key] = $value;
+				}
+				if( preg_match('/^(akun_piutang)$/i', $key) ) {
+					unset($Data[$key]);
+					$key = 'kode_pelanggan_acc';
+					$Data[$key] = $value;
+				}
+				if( preg_match('/^(jenis)$/i', $key) ) {
+					$Data['kode_harga'] = 1;
+					if( strtolower(trim((string) $value)) == strtolower('Reguler') ) $Data['kode_harga'] = 1;
+					if( strtolower(trim((string) $value)) == strtolower('Toko') ) $Data['kode_harga'] = 2;
+					$Columns[] = "`kode_harga` = '" . ($Data['kode_harga']) . "'";
+				}
+				if( preg_match('/^(status_member|poin|no_anggota|wajib_belanja|potong|tanggal_registrasi)$/i', $key) ) continue; // skip colomn
+				$value = trim((string) $value);
+				$Columns[] = "`" . $key . "` = " . ((trim((string) $value)!='') ? "'" . escape_string($value) . "'" : "NULL");
+			}
+			$Sql = "SELECT * from mst_toko where kode_toko = '" . escape_string($Data['kode_toko']) . "' ";
+			$Query = $this -> db -> query($Sql);
+			if( $Query->num_rows() == 0 ) {
+				$id = $this -> db -> next_autoincrement('{prefix}mst_toko');
+				$Columns[] = "`id_mst_toko` = '" . escape_string($id) . "'";
+				$Columns[] = "`sync_necto` = TRUE ";
+				$Sql = "INSERT INTO mst_toko set " . implode(', ', $Columns);
+				$Query = $this -> db -> query($Sql);
+			} else {
+				$_Data = $Query->fetch_array();
+				$id = $_Data['id_mst_toko'];
+				$Columns[] = "`sync_necto` = TRUE ";
+				$Sql = "UPDATE mst_toko set " . implode(', ', $Columns) . " where id_mst_toko = '" . escape_string($id) . "' ";
+				$Query = $this -> db -> query($Sql);
+			}
+			echo "[ok]\n";
+		}
+		// END TOKO
+	}
+	function pushToko() {
+		// BEGIN TOKO
+		$Sql = "SELECT * FROM mst_toko WHERE sync_necto != TRUE OR sync_necto IS NULL";
+		$Query = $this -> db -> query($Sql);
+		$Datas = $Query -> result_array();
+
+		foreach ($Datas as $Data) {
+			echo "\n{$Data['kode_toko']} ";
+
+			$Columns = array();
+
+			foreach ($Data as $key => $value) {
+				if ( preg_match('/^[\d]+$/i', $key) ) continue;
+				if (trim((string) $value) == '') $value = null;
+
+				// Skip kolom internal MariaDB
+				if (preg_match('/^(id_mst_toko|sync_necto)$/i', $key)) continue;
+
+				// Balik mapping: _toko -> _pelanggan
+				if (preg_match('/(_toko)$/i', $key)) {
+					$key = str_replace('_toko', '_pelanggan', $key);
+				}
+
+				// Balik mapping: kode_pelanggan_acc -> akun_piutang
+				if (preg_match('/^(kode_pelanggan_acc)$/i', $key)) {
+					$key = 'akun_piutang';
+				}
+
+				// Balik mapping: kode_harga -> jenis
+				if (preg_match('/^(kode_harga)$/i', $key)) {
+					$jenis = ((int) $value === 2) ? 'Toko' : 'Reguler';
+					$Columns[] = '"jenis" = ' . "'" . escape_string_pgsql($jenis) . "'";
+					continue;
+				}
+
+				$value = trim((string) $value);
+				$Columns[] = '"' . $key . '" = ' . (($value != '') ? "'" . escape_string_pgsql($value) . "'" : "NULL");
+			}
+
+			// Cek apakah data sudah ada di PostgreSQL
+			$kode_pelanggan = escape_string_pgsql($Data['kode_toko']);
+			$Sql = "SELECT kode_pelanggan FROM mst_pelanggan WHERE kode_pelanggan = '{$kode_pelanggan}'";
+			$Query = $this -> dbpgMRO -> query($Sql);
+			$Datas = $Query -> result_array();
+
+			if (count($Datas) == 0) {
+				$Sql = 'INSERT INTO mst_pelanggan SET ' . implode(', ', $Columns);
+				$this -> dbpgMRO -> query($Sql);
+			} else {
+				$Sql = 'UPDATE mst_pelanggan SET ' . implode(', ', $Columns)
+					. " WHERE kode_pelanggan = '{$kode_pelanggan}'";
+				$this -> dbpgMRO -> query($Sql);
+			}
+
+			// Update sync_necto di MariaDB setelah berhasil push
+			$id = escape_string($Data['id_mst_toko']);
+			$this -> db -> query("UPDATE mst_toko SET sync_necto = TRUE WHERE id_mst_toko = '{$id}'");
+
+			echo "[ok]\n";
+		}
+		// END TOKO
+	}
+
+
+	function AutoGetLatLngToko() {
+		// BEGIN TOKO
+		$Sql = "SELECT * from mst_toko where (gps_lat = '' or gps_lat IS NULL) or (gps_lng = '' or gps_lng IS NULL) limit 0,1 ";
+		$Query = $this -> db -> query($Sql);
+		$Datas = $Query->result_array();
+		foreach($Datas as $Data) {
+			echo "\n{$Data['kode_toko']} - {$Data['nama_toko']} - {$Data['alamat_toko']} ";
+
+			$alamat = "{$Data['nama_toko']}, {$Data['alamat_toko']}";
+			$alamat_encoded = urlencode($alamat);
+			$url = "https://maps.googleapis.com/maps/api/geocode/json?address=$alamat_encoded&key=" . config_item('api_key', 'google');
+			$response = file_get_contents($url);
+			echo $response;
+			$data = json_decode($response, true);
+			if ($data['status'] === 'OK') {
+				$latitude = $data['results'][0]['geometry']['location']['lat'];
+				$longitude = $data['results'][0]['geometry']['location']['lng'];
+				$Sql = "UPDATE mst_toko set gps_lat = '" . $latitude . "', gps_lng = '" . $longitude . "' where id_mst_toko = '" . escape_string($Data['id_mst_toko']) . "' ";
+				echo $this -> db -> query_prefix($Sql).";\n";
+				//$Query = $this -> db -> query($Sql);
+				echo "Data tersimpan!";
+				echo "[ok]\n";
+			} else {
+				echo "Gagal mendapatkan koordinat.";
+			}
+		}
+		// END TOKO
+	}
+
+
+
+	function diskonImplemented() {
+		$Sql = "UPDATE {prefix}inv_barang set diskon = NULL where diskon >= 1 ";
+		$Query = $this -> db -> query($Sql);
+
+		$Sql = "SELECT *
+		from {prefix}inv_barang_diskon as bd
+		join {prefix}inv_barang_diskon_barang as bdb USING(id_inv_barang_diskon)
+		where (now() between diskon_start and diskon_end)
+		order by diskon_start asc
+		";
+		$Query = $this -> db -> query($Sql);
+		$Datas = $Query -> result_object();
+		foreach($Datas as $Data) {
+			$Sql = "UPDATE {prefix}inv_barang set diskon = '".escape_string($Data->diskon)."' where id_inv_barang = '".escape_string($Data->id_inv_barang)."' ";
+			$this -> db -> query($Sql);
+		}
+	}
+
+	function invoice_generate() {
+		$this -> load -> libraries('input');
+
+		$this -> load -> libraries('urltopdf');
+		echo "#!/bin/bash \n";
+
+		$Sql = "SELECT *
+		from {prefix}intimart_buy as b
+		where 1=1
+		and pdf_file is NULL 
+		order by `timestamp`
+		";
+		$Query = $this -> db -> query($Sql);
+		$Datas = $Query -> result_object();
+		foreach($Datas as $Data) {
+			$id_intimart_buy = $Data->id_intimart_buy;
+			$invoice_number = $Data->invoice_number;
+			$filename = time();
+
+			$dir = upload_dir('../intimart/invoice/'.($invoice_number));
+
+			$kwitansi_png_exists = file_exists($dir.$filename.'.png');
+			if( $kwitansi_png_exists ) delete($dir.$filename.'.png');
+			$kwitansi_pdf_exists = file_exists($dir.$filename.'.pdf');
+			if( $kwitansi_pdf_exists ) delete($dir.$filename.'.pdf');
+
+			$data['qrcode'] = aehash(_APP_ID_.$invoice_number, 'QR', 24);
+			$url     = site_url('intimart/pembelian/invoice/'.$invoice_number.'/'.$data['qrcode']) . '?invoice_generate=true&_=' . $filename;
+
+			$savetopdf = $dir.$filename.'.pdf';
+			$this -> urltopdf -> setOption(array(
+				'margin-top' => false,
+				'margin-right' => false,
+				'margin-bottom' => false,
+				'margin-left' => false,
+				'orientation' => 'Portrait',
+				'page-size' => 'A4',
+				'page-width' => false,
+				'page-height' => false,
+				'width' => false,
+				'height' => false,
+				'zoom' => false,
+			));
+			$this -> urltopdf -> setCache('/tmp/aefw/wkhtmltopdf/cache');
+			$content = $this -> urltopdf -> topdf($url, $savetopdf, true);
+			echo "$content \n";
+
+			$savetopng = $dir.$filename.'.png';
+			/*
+			$this -> urltopdf -> setOption(array(
+				'margin-top' => 20,
+				'margin-right' => 20,
+				'margin-bottom' => false,
+				'margin-left' => 20,
+				'orientation' => false,
+				'page-size' => false,
+				'page-width' => false,
+				'page-height' => false,
+				'width' => false,
+				'height' => false,
+				'zoom' => false,
+			));
+			$this -> urltopdf -> setCache('/tmp/aefw/wkhtmltoimage/cache');
+			$content = $this -> urltopdf -> tojpg($url, $savetopng, true);
+			echo "$content \n";
+			/** */
+			echo "convert -density 300 -background white -alpha off \"$savetopdf\"[0] \"$savetopng\"\n";
+
+			$savetoe  = $dir.$filename.'e128.pdf';
+			echo "convert -density 300 \"$savetopng\" -quality 100 \"$savetoe\" \n";
+			$savetoenc = $dir.$filename.'e128821e.pdf';
+			echo "qpdf --encrypt \"\" \"".md5($filename)."\" 256 --print=none --modify=none --extract=n -- \"$savetoe\" \"$savetoenc\" \n";
+
+			$Sql = "UPDATE {prefix}intimart_buy set pdf_file = '".escape_string($filename)."' where id_intimart_buy = '".escape_string($id_intimart_buy)."' ";
+			$this -> db -> query($Sql);
+
+			echo "\n";
+		}
+	}
+
+
+
+	function invoice_syn_necto() {
+		// ── 1. AMBIL ORDER PENDING ────────────────────────────────────────────────
+		$Sql = "SELECT
+				b.*,
+				t.kode_toko,
+				t.jenis
+			FROM {prefix}intimart_buy b
+			LEFT JOIN {prefix}mst_toko t USING(id_mst_toko)
+			WHERE b.sync_necto = FALSE
+				-- AND b.status > 2 -- 'diproses' belum sync
+				AND b.status >= 2 -- 'diproses' langsung sync
+			ORDER BY b.timestamp ASC
+		";
+		$Query = $this -> db -> query($Sql);
+		$Datas = $Query -> result_array();
+		if (empty($Datas)) return;
+		foreach($Datas as $Data) {
+			echo "\n{$Data['invoice_number']} - {$Data['nama_penerima']} - {$Data['biaya_total']} - {$Data['status']} \n";
+			$id_intimart_buy = (int) $Data['id_intimart_buy'];
+			$kodeFaktur = 'JFO' . $Data['invoice_number'];
+			try {
+				$jenis_faktur  = 'Online';
+				// 0: menunggu\n200: selesai\n1: diproses\n2: dikirim
+				switch((int) $Data['status']) {
+					case -1: // DIBATALKAN
+						$status       = ucwords(strtolower('dibatalkan'));
+						break;
+					case 0: // PENDING
+						$status       = ucwords(strtolower('menunggu'));
+						break;
+					case 1: // DIBAYAR
+						$status       = 'Order'; // ucwords(strtolower('diproses'));
+						break;
+					case 2: // DIPROSES
+						$status       = 'Order'; // ucwords(strtolower('diproses'));
+						break;
+					case 3: // DIKEMAS
+						$status       = ucwords(strtolower('dikemas'));
+						break;
+					case 4: // SIAPKIRIM
+						$status       = ucwords(strtolower('siapkirim'));
+						break;
+					case 5: // DIKIRIM
+						$status       = ucwords(strtolower('dikirim'));
+						break;
+					case 200: // SELESAI
+						$status       = ucwords(strtolower('selesai'));
+						break;
+					default:
+						$status       = 'Order';
+						break;
+				}
+
+				// ── 2. CEK DUPLIKAT DI POSTGRESQL ────────────────────────────────
+				$Sql   = "SELECT 1 FROM sls_faktur WHERE kode_faktur = '{$kodeFaktur}' LIMIT 1";
+				$Query = $this -> dbpgMRO -> query($Sql);
+				$exists = $Query -> result_array();
+				if (!empty($exists)) {
+					echo "Kode faktur {$kodeFaktur} sudah ada di PostgreSQL, melewati sinkronisasi untuk invoice ini.\n";
+					$this -> dbpgMRO -> query("UPDATE sls_faktur
+						SET jenis_faktur = '{$jenis_faktur}', status = '{$status}'
+						WHERE kode_faktur = '{$kodeFaktur}'
+					");
+					$this -> db -> query("UPDATE {prefix}intimart_buy SET sync_necto = TRUE WHERE id_intimart_buy = {$id_intimart_buy}");
+					continue;
+				}
+
+				// ── 3. AMBIL DETAIL ITEMS ─────────────────────────────────────────
+				$Sql = "SELECT
+						d.qty,
+						d.harga,
+						d.diskon_item,
+						d.log_promo,
+						i.kode_barang
+					FROM {prefix}intimart_buy_detail d
+					LEFT JOIN {prefix}inv_barang i USING(id_inv_barang)
+					WHERE d.id_intimart_buy = {$id_intimart_buy}
+				";
+				$Query = $this -> db -> query($Sql);
+				$Details = $Query -> result_array();
+
+				// ── 3b. AMBIL DATA PROMO ──────────────────────────────────────────
+				$QueryPromo  = $this->db->query("SELECT kode_promo, diskon_rp FROM {prefix}intimart_buy_promo WHERE id_intimart_buy = {$id_intimart_buy} ORDER BY id_intimart_buy_promo ASC");
+				$PromoRows   = $QueryPromo->result_array();
+				$promoDiskon = array_sum(array_column($PromoRows, 'diskon_rp'));
+				$promoKodes  = array_filter(array_column($PromoRows, 'kode_promo'));
+				$kodePromoDiskonStr = implode(',', $promoKodes); // "PR0001" atau "PR0001,PR0002"
+
+				// ── 4. MAPPING FAKTUR ─────────────────────────────────────────────
+				$totalBayar  = (float)($Data['bayar_dp'] ?? 0) + (float)($Data['bayar_pelunasan'] ?? 0);
+				$totalSistem = (float)($Data['biaya_subtotal'] ?? 0); // (float)($Data['biaya_total'] ?? 0);
+				$piutang     = max(0, (float)($Data['biaya_total'] ?? 0) - $totalBayar); // max(0, $totalSistem - $totalBayar);
+				$tglFaktur   = $Data['created']
+								? date('Y-m-d', strtotime($Data['created']))
+								: date('Y-m-d');
+				$jamFaktur   = $Data['created']
+								? date('H:i:s', strtotime($Data['created']))
+								: date('H:i:s');
+				$kode_user        = '02';
+				$keterangan       = escape_string_pgsql($Data['catatan_utk_penjual'] ?? '');
+				$kodePelanggan    = escape_string_pgsql($Data['kode_toko'] ?? '');
+				$jenis            = escape_string_pgsql($Data['jenis'] ?? '');
+				$promoDiskonPg    = $promoDiskon > 0 ? $promoDiskon : 0; // $promoDiskon > 0 ? $promoDiskon : 'NULL';
+				$kodePromoDiskonPg = $kodePromoDiskonStr !== ''
+					? "'" . escape_string_pgsql($kodePromoDiskonStr) . "'"
+					: 'NULL';
+
+				$Sql = "INSERT INTO sls_faktur (
+						kode_faktur, kode_pelanggan, tanggal_faktur, jam, kode_user,
+						keterangan, total_sistem, total_bulat,
+						bayar, piutang, jenis,
+						jenis_faktur, status,
+						promo_diskon, kode_promo_diskon
+					) VALUES (
+						'{$kodeFaktur}', '{$kodePelanggan}', '{$tglFaktur}', '{$jamFaktur}', '{$kode_user}',
+						'{$keterangan}', {$totalSistem}, {$totalSistem},
+						{$totalBayar}, {$piutang}, '{$jenis}',
+						'{$jenis_faktur}', '{$status}',
+						{$promoDiskonPg}, {$kodePromoDiskonPg}
+					)
+				";
+				$this -> dbpgMRO -> query($Sql);
+
+				// ── 5. INSERT DETAIL ──────────────────────────────────────────────
+				foreach ($Details as $index => $item) {
+					$kodeFakturDetail = $kodeFaktur . '.' . $index;
+					$kodeBarang       = escape_string_pgsql($item['kode_barang'] ?? '');
+					$qty              = (float)($item['qty'] ?? 1);
+					$harga            = (float)($item['harga'] ?? 0);
+					$hargaJual        = $qty > 0 ? ($harga / $qty) : 0;
+					$diskonItem       = (float)($item['diskon_item'] ?? 0);
+
+					// Ekstrak kode_promo dari log_promo (snapshot atau format hadiah)
+					$kodePromoItem = '';
+					if (!empty($item['log_promo'])) {
+						$logArr = json_decode($item['log_promo'], true);
+						if (isset($logArr['promo']['kode_promo'])) {
+							$kodePromoItem = $logArr['promo']['kode_promo']; // snapshot Tebus Murah
+						} elseif (isset($logArr['kode_promo'])) {
+							$kodePromoItem = $logArr['kode_promo']; // hadiah Gratis
+						}
+					}
+					$diskonItemPg   = $diskonItem > 0 ? $diskonItem : 0; // $diskonItem > 0 ? $diskonItem : 'NULL';
+					$kodePromoItemPg = $kodePromoItem !== ''
+						? "'" . escape_string_pgsql($kodePromoItem) . "'"
+						: 'NULL';
+
+					$Sql = "INSERT INTO sls_faktur_detail (
+							kode_faktur_detail, kode_faktur,
+							kode_barang, jumlah, harga_jual,
+							diskon, kode_promo
+						) VALUES (
+							'{$kodeFakturDetail}', '{$kodeFaktur}',
+							'{$kodeBarang}', {$qty}, {$hargaJual},
+							{$diskonItemPg}, {$kodePromoItemPg}
+						)
+					";
+					$this -> dbpgMRO -> query($Sql);
+				}
+
+				// ── 6. TANDAI SYNCED DI MARIADB ───────────────────────────────────
+				$this -> db -> query("UPDATE {prefix}intimart_buy SET sync_necto = TRUE WHERE id_intimart_buy = {$id_intimart_buy}");
+
+			} catch (Exception $e) {
+				// Gagal 1 invoice → skip, lanjut invoice berikutnya
+				echo "syncNectoPostgres FAIL [{$kodeFaktur}]: " . $e->getMessage();
+				continue;
+			}
+		}
+	}
+
+}
